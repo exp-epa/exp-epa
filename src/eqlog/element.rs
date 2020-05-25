@@ -1,4 +1,4 @@
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Element(pub u32);
 impl Default for Element {
     fn default() -> Self {

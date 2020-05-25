@@ -150,13 +150,13 @@ impl<Sig: Signature> CheckedPresentation<Sig> {
 #[cfg(test)]
 mod test_interpretation {
     use super::*;
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
 
     fn compute_new_interpretation<Sig: Signature>(
         presentation: &CheckedPresentation<Sig>,
         model: &Model<Sig>,
-    ) -> HashSet<Row> {
-        let mut result: HashSet<Row> = HashSet::new();
+    ) -> BTreeSet<Row> {
+        let mut result: BTreeSet<Row> = BTreeSet::new();
         presentation.visit_new_interpretations(model, |row| {
             result.insert(row.to_vec());
         });
@@ -178,7 +178,7 @@ mod test_interpretation {
             relations: vec![],
             equalities: vec![],
         }.checked(&sig);
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{});
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{});
     }
 
     #[test]
@@ -210,13 +210,13 @@ mod test_interpretation {
         }.checked(&sig);
 
         assert_eq!(
-            compute_new_interpretation(&presentation, &model), hashset!{
+            compute_new_interpretation(&presentation, &model), btreeset!{
             vec![a0, b1],
             vec![a1, b0],
         });
 
         model.age_rows();
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{});
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{});
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod test_interpretation {
             equalities: vec![(1, 3)],
         }.checked(&sig);
 
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{
             vec![a0, b0, a0, b0],
             vec![a0, b0, a1, b0],
             vec![a1, b0, a0, b0],
@@ -258,7 +258,7 @@ mod test_interpretation {
         });
 
         model.age_rows();
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{});
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{});
     }
 
     #[test]
@@ -296,7 +296,7 @@ mod test_interpretation {
             equalities: vec![(0, 3)],
         }.checked(&sig);
 
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{
             vec![a0, b0, b0, a0],
             vec![a1, b0, b1, a1],
             vec![a1, b1, b1, a1],
@@ -310,7 +310,7 @@ mod test_interpretation {
         model.adjoin_rows(R1, vec![
             vec![b1, a0],
         ]);
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{
              vec![a0, b1, b1, a0],
              vec![a0, b1, b0, a0],
              vec![a0, b0, b1, a0],
@@ -354,7 +354,7 @@ mod test_interpretation {
             equalities: vec![(2, 3), (1, 2)],
         }.checked(&sig);
 
-        assert_eq!(compute_new_interpretation(&presentation, &model), hashset!{
+        assert_eq!(compute_new_interpretation(&presentation, &model), btreeset!{
             vec![a0, b0, b0, b0],
             vec![a1, b0, b0, b0],
         });
@@ -473,10 +473,10 @@ pub fn close_model<Sig: Signature>(
 mod test_close_model {
     use super::*;
 
-    use std::collections::HashSet;
+    use std::collections::BTreeSet;
     use std::iter::{repeat_with, once};
 
-    fn save_rows<'a>(rows: impl IntoIterator<Item = &'a [Element]>) -> HashSet<Row> {
+    fn save_rows<'a>(rows: impl IntoIterator<Item = &'a [Element]>) -> BTreeSet<Row> {
         rows.into_iter().map(|row| row.to_vec()).collect()
     }
 
@@ -513,7 +513,7 @@ mod test_close_model {
 
         close_model(&[symmetry], &mut model);
 
-        assert_eq!(save_rows(model.rows(R)), hashset!{
+        assert_eq!(save_rows(model.rows(R)), btreeset!{
             vec![el0, el1],
             vec![el1, el0],
             vec![el2, el2],
@@ -638,7 +638,7 @@ mod test_close_model {
 
         let elx = model.representative(el2);
         assert_eq!(model.representative(el3), elx);
-        assert_eq!(save_rows(model.rows(R)), hashset!{
+        assert_eq!(save_rows(model.rows(R)), btreeset!{
             vec![el0, el1],
 
             vec![elx, elx],
@@ -733,7 +733,7 @@ mod test_close_model {
             assert_eq!(model.representative(el), elz);
         }
 
-        assert_eq!(save_rows(model.rows(R)), hashset!{
+        assert_eq!(save_rows(model.rows(R)), btreeset!{
             vec![el0, el1],
             vec![elx, elx],
             vec![ely, ely],
@@ -785,6 +785,6 @@ mod test_close_model {
         let el56 = model.representative(el5);
         assert_eq!(model.representative(el6), el56);
 
-        assert_eq!(hashset!{el0, el12, el34, el56}.len(), 4);
+        assert_eq!(btreeset!{el0, el12, el34, el56}.len(), 4);
     }
 }

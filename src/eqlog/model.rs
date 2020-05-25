@@ -2,7 +2,7 @@ use super::union_find::*;
 use super::element::*;
 use super::signature::*;
 use std::vec::Vec;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::iter::{FromIterator, once};
 use std::mem::swap;
 
@@ -10,8 +10,8 @@ pub type Row = Vec<Element>;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct DeltaRelation {
-    old_rows: HashSet<Row>,
-    new_rows: HashSet<Row>,
+    old_rows: BTreeSet<Row>,
+    new_rows: BTreeSet<Row>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -25,7 +25,7 @@ pub struct Model<Sig: Signature> {
     signature: Sig,
     element_infos: Vec<ElementInfo<Sig::Sort>>,
     representatives: UnionFind,
-    dirty_elements: HashSet<Element>,
+    dirty_elements: BTreeSet<Element>,
     relations: Vec<DeltaRelation>,
 }
 
@@ -33,13 +33,13 @@ impl<Sig: Signature> Model<Sig> {
     pub fn new(signature: Sig) -> Self {
         let relations = Vec::from_iter(
             signature.relations().iter().
-            map(|_| DeltaRelation { old_rows: hashset!{}, new_rows: hashset!{} })
+            map(|_| DeltaRelation { old_rows: btreeset!{}, new_rows: btreeset!{} })
         );
         Model {
             signature,
             element_infos: Vec::new(),
             representatives: UnionFind::new(),
-            dirty_elements: HashSet::new(),
+            dirty_elements: BTreeSet::new(),
             relations: relations,
         }
     }
@@ -73,7 +73,11 @@ impl<Sig: Signature> Model<Sig> {
 
     pub fn age_rows(&mut self) {
         for DeltaRelation { new_rows, old_rows } in &mut self.relations {
-            old_rows.extend(new_rows.drain());
+            //old_rows.extend(new_rows.drain());
+            let mut new_rows_tmp = BTreeSet::new();
+            swap(new_rows, &mut new_rows_tmp);
+
+            old_rows.extend(new_rows_tmp.into_iter());
         }
     }
     pub fn adjoin_element(&mut self, sort: Sig::Sort) -> Element {
@@ -149,7 +153,7 @@ impl<Sig: Signature> Model<Sig> {
 
     pub fn canonicalize_elements(&mut self) {
         // Swap out self.dirty_elements for an empty list
-        let mut dirty_elements = HashSet::new();
+        let mut dirty_elements = BTreeSet::new();
         swap(&mut dirty_elements, &mut self.dirty_elements);
 
         let mut dirty_rows: Vec<Row> = vec![];
@@ -202,8 +206,8 @@ mod test {
     type ExampleSignature = StaticSignature<ExampleSort, ExampleRelation>;
     type Model = super::Model<ExampleSignature>;
 
-    fn clone_rows<'a, I: Iterator<Item = &'a [Element]>>(rows: I) -> HashSet<Row> {
-        HashSet::from_iter(rows.map(|els| els.to_vec()))
+    fn clone_rows<'a, I: Iterator<Item = &'a [Element]>>(rows: I) -> BTreeSet<Row> {
+        BTreeSet::from_iter(rows.map(|els| els.to_vec()))
     }
 
     fn assert_valid_model(m: &Model) {
@@ -220,7 +224,7 @@ mod test {
             assert!(old_rows.is_disjoint(&new_rows));
             let rows = clone_rows(m.rows(r));
             assert_eq!(
-                HashSet::from_iter(old_rows.union(&new_rows).cloned()),
+                BTreeSet::from_iter(old_rows.union(&new_rows).cloned()),
                 rows
             );
 
@@ -280,11 +284,11 @@ mod test {
         assert_valid_model(&m);
         assert_eq!(
             clone_rows(m.rows(R0)),
-            hashset!{vec![el0, el3], vec![el1, el3]}
+            btreeset!{vec![el0, el3], vec![el1, el3]}
         );
-        assert_eq!(clone_rows(m.rows(R1)), hashset!{});
-        assert_eq!(clone_rows(m.rows(R2)), hashset!{});
-        assert_eq!(clone_rows(m.rows(R3)), hashset!{});
+        assert_eq!(clone_rows(m.rows(R1)), btreeset!{});
+        assert_eq!(clone_rows(m.rows(R2)), btreeset!{});
+        assert_eq!(clone_rows(m.rows(R3)), btreeset!{});
 
         m.adjoin_rows(R0, vec![
             vec![el1, el4],
@@ -293,18 +297,18 @@ mod test {
         assert_valid_model(&m);
         assert_eq!(
             clone_rows(m.rows(R0)),
-            hashset!{vec![el0, el3], vec![el1, el3], vec![el1, el4]}
+            btreeset!{vec![el0, el3], vec![el1, el3], vec![el1, el4]}
         );
 
         m.adjoin_rows(R1, vec![vec![]]);
         assert_valid_model(&m);
         assert_eq!(
             clone_rows(m.rows(R0)),
-            hashset!{vec![el0, el3], vec![el1, el3], vec![el1, el4]}
+            btreeset!{vec![el0, el3], vec![el1, el3], vec![el1, el4]}
         );
         assert_eq!(
             clone_rows(m.rows(R1)),
-            hashset!{vec![]}
+            btreeset!{vec![]}
         );
 
         m.adjoin_rows(R2, vec![
@@ -334,14 +338,14 @@ mod test {
         assert_valid_model(&m);
         assert_eq!(
             clone_rows(m.rows(R0)),
-            hashset!{vec![el0, el3]}
+            btreeset!{vec![el0, el3]}
         );
-        assert_eq!(clone_rows(m.rows(R1)), hashset!{});
+        assert_eq!(clone_rows(m.rows(R1)), btreeset!{});
         assert_eq!(
             clone_rows(m.rows(R2)),
-            hashset!{vec![el3, el2, el4]}
+            btreeset!{vec![el3, el2, el4]}
         );
-        assert_eq!(clone_rows(m.rows(R3)), hashset!{});
+        assert_eq!(clone_rows(m.rows(R3)), btreeset!{});
     }
 
     #[test]
@@ -359,14 +363,14 @@ mod test {
         assert_valid_model(&m);
         assert_eq!(
             clone_rows(m.new_rows(R0)),
-            hashset!{vec![el0, el3]}
+            btreeset!{vec![el0, el3]}
         );
-        assert_eq!(clone_rows(m.new_rows(R1)), hashset!{});
+        assert_eq!(clone_rows(m.new_rows(R1)), btreeset!{});
         assert_eq!(
             clone_rows(m.new_rows(R2)),
-            hashset!{vec![el3, el2, el4]}
+            btreeset!{vec![el3, el2, el4]}
         );
-        assert_eq!(clone_rows(m.new_rows(R3)), hashset!{});
+        assert_eq!(clone_rows(m.new_rows(R3)), btreeset!{});
 
         assert!(m.old_rows(R0).next().is_none());
         assert!(m.old_rows(R1).next().is_none());
@@ -389,7 +393,7 @@ mod test {
 
         n.extend(once((R1, vec![])));
         assert!(n.old_rows(R1).next().is_none());
-        assert_eq!(clone_rows(n.rows(R1)), hashset!{vec![]});
+        assert_eq!(clone_rows(n.rows(R1)), btreeset!{vec![]});
 
         n.extend(once((R2, vec![el3, el2, el4]))); // already in old rows
         assert_valid_model(&n);
@@ -430,7 +434,7 @@ mod test {
 
         assert_eq!(
             clone_rows(m.rows(R2)),
-            hashset!{
+            btreeset!{
                 vec![el3, el0, el4],
                 vec![el3, el0, el4],
                 vec![el4, el2, el3],
@@ -439,7 +443,7 @@ mod test {
                 vec![el4, el0, el4],
             }
         );
-        assert!(clone_rows(m.old_rows(R2)).is_subset(&hashset!{
+        assert!(clone_rows(m.old_rows(R2)).is_subset(&btreeset!{
             vec![el3, el0, el4],
             vec![el3, el1, el4],
             vec![el4, el2, el3],

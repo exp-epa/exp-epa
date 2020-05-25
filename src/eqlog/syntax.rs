@@ -1,10 +1,10 @@
 use super::signature::*;
 use super::closure::*;
 use std::fmt::{self, Display, Formatter};
-use std::collections::{VecDeque, HashMap};
+use std::collections::{VecDeque, BTreeMap};
 use std::iter::once;
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Term {
     Variable(String),
     Wildcard(Option<usize>),
@@ -537,7 +537,7 @@ fn test_sequent_macro() {
 
 
 fn check_occurence(seq: &Sequent) {
-    let mut var_occurences: HashMap<&str, usize> = HashMap::new();
+    let mut var_occurences: BTreeMap<&str, usize> = BTreeMap::new();
     seq.visit_subterms(|t| {
         match t {
             Term::Variable(name) => {
@@ -562,24 +562,24 @@ fn check_occurence(seq: &Sequent) {
 fn to_presentation<'a, Sig: Signature>(
     signature: Sig,
     formula: &'a Formula,
-) -> (Presentation<Sig::Relation>, HashMap<&'a Term, (usize, Sig::Sort)>) 
+) -> (Presentation<Sig::Relation>, BTreeMap<&'a Term, (usize, Sig::Sort)>) 
 where
     Sig::Sort: Display,
     Sig::Relation: Display,
     Sig::Relation: PredicateOrOperation,
 {
-    let predicates: HashMap<String, Sig::Relation> =
+    let predicates: BTreeMap<String, Sig::Relation> =
         signature.relations().iter().cloned().
         filter(|r| r.kind() == RelationKind::Predicate).
         map(|r| (r.to_string(), r)).
         collect();
-    let operations: HashMap<String, Sig::Relation> =
+    let operations: BTreeMap<String, Sig::Relation> =
         signature.relations().iter().cloned().
         filter(|r| r.kind() == RelationKind::Operation).
         map(|r| (r.to_string(), r)).
         collect();
 
-    let mut added_terms: HashMap<&'a Term, (usize, Sig::Sort)> = HashMap::new();
+    let mut added_terms: BTreeMap<&'a Term, (usize, Sig::Sort)> = BTreeMap::new();
     let mut presentation = Presentation { relations: vec![], equalities: vec![] };
     let mut row_len: usize = 0;
 
@@ -705,12 +705,12 @@ where
 {
     let (domain, mut added_terms) = to_presentation(&signature, premise);
 
-    let predicates: HashMap<String, Sig::Relation> =
+    let predicates: BTreeMap<String, Sig::Relation> =
         signature.relations().iter().cloned().
         filter(|r| r.kind() == RelationKind::Predicate).
         map(|r| (r.to_string(), r)).
         collect();
-    let operations: HashMap<String, Sig::Relation> =
+    let operations: BTreeMap<String, Sig::Relation> =
         signature.relations().iter().cloned().
         filter(|r| r.kind() == RelationKind::Operation).
         map(|r| (r.to_string(), r)).
@@ -752,7 +752,7 @@ where
                 let mut define_term_as = |
                     term: &'a Term,
                     result: usize,
-                    added_terms: &mut HashMap<&'a Term, (usize, Sig::Sort)>,
+                    added_terms: &mut BTreeMap<&'a Term, (usize, Sig::Sort)>,
                 | -> Sig::Sort {
                     if let Term::Operation(name, args) = term {
                         let &r = operations.get(name).unwrap_or_else(|| panic!(

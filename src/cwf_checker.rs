@@ -106,79 +106,6 @@ impl Environment {
     }
 
     pub fn add_definition(&mut self, cwf: &mut Cwf, should_check: EqChecking, def: &ast::Def) {
-        if &def.name == "neg_true" {
-            close_cwf(cwf);
-            println!("CtxExt:");
-            println!("================================================================================");
-            for ext_row in cwf.rows(CwfRelation::ExtCtx) {
-                let [base_ctx, ext_ctx] = <[Element; 2]>::try_from(ext_row).unwrap();
-                println!("{:?}.? = {:?}", base_ctx, ext_ctx);
-            }
-            for dom_row in cwf.rows(CwfRelation::Dom) {
-                let [morph, dom] = <[Element; 2]>::try_from(dom_row).unwrap();
-                let cod = cwf.rows(CwfRelation::Cod).find(|r| r[0] == morph).unwrap()[1];
-                println!("{:?} : {:?} -> {:?}", morph, dom, cod);
-                
-                for id_row in cwf.rows(CwfRelation::Id) {
-                    let [ctx, id] = <[Element; 2]>::try_from(id_row).unwrap();
-                    if id == morph {
-                        println!("\t = id_{:?}", ctx);
-                    }
-                }
-                
-                for wkn_row in cwf.rows(CwfRelation::Wkn) {
-                    let [ext_ctx, wkn] = <[Element; 2]>::try_from(wkn_row).unwrap();
-                    if wkn == morph {
-                        println!("\t = p_{:?}", ext_ctx);
-                    }
-                }
-                for mor_ext_row in cwf.rows(CwfRelation::MorExt) {
-                    let [ext_ctx, base_mor, ext_tm, ext_mor] = <[Element; 4]>::try_from(mor_ext_row).unwrap();
-                    if ext_mor != morph {
-                        continue;
-                    }
-
-                    let is_false = cwf.rows(CwfRelation::False).find(|&false_row| {
-                        let [ctx, false_el] = <[Element; 2]>::try_from(false_row).unwrap();
-                        false_el == ext_tm
-                    }).is_some();
-                    if is_false {
-                        println!("\t = <{:?}, false>", base_mor);
-                    }
-                    let is_true = cwf.rows(CwfRelation::True).find(|&true_row| {
-                        let [ctx, true_el] = <[Element; 2]>::try_from(true_row).unwrap();
-                        true_el == ext_tm
-                    }).is_some();
-                    if is_true {
-                        println!("\t = <{:?}, true>", base_mor);
-                    }
-
-                    let ext_of_var = cwf.rows(CwfRelation::Var).filter_map(|var_row| {
-                        let [ext_ctx, var] = <[Element; 2]>::try_from(var_row).unwrap();
-                        if var == ext_tm {
-                            Some(ext_ctx)
-                        } else {
-                            None
-                        }
-                    }).next();
-
-                    if let Some(ext_of_var) = ext_of_var {
-                        println!("\t = <{:?}, var({:?})>", base_mor, ext_of_var);
-                    }
-
-                    if !is_true && !is_false && ext_of_var.is_none() {
-                        println!("\t = <{:?}, ?>", base_mor);
-                    }
-                }
-                for comp_row in cwf.rows(CwfRelation::Comp) {
-                    let [after, before, comp] = <[Element; 3]>::try_from(comp_row).unwrap();
-                    if comp == morph {
-                        println!("\t = {:?} o {:?}", after, before);
-                    }
-                }
-            }
-        }
-
         let (def_tm, def_extension) = self.clone().with_args(cwf, should_check, def.args.as_slice(),
             |mut extended_self, cwf, should_check| {
                 let def_ty = extended_self.add_type(cwf, should_check, &def.ty);
@@ -556,9 +483,8 @@ def r (x : Bool) : x = neg (neg x) :=
   end.")
     }
 
-    #[test]
-    fn wtf() {
-        let code = "
+
+const CODE: &'static str = "\
 def neg_ (x : Bool): Bool :=
   elim x into (y : Bool) : Bool
   | true => false
@@ -566,36 +492,55 @@ def neg_ (x : Bool): Bool :=
   end.
 
 def should_false : Bool := neg_ true.
-def neg_true : should_false = false := refl false.";
+def neg_true : should_false = false := refl false. \
+";
+
+    #[test]
+    fn failing_wtf() {
         unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 0 };
-        println!("running failing:");
-        std::panic::catch_unwind(|| check_defs(code));
-        unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 41453380551408169499007325336065367281 };
-        println!("running succeeding:");
-        check_defs(code);
+        check_defs(CODE)
     }
 
     #[test]
-    #[cfg(feature = "eqlog_deterministic_hash")]
-    fn weird_test() {
-        let code = "
-def neg_ (x : Bool): Bool :=
-  elim x into (y : Bool) : Bool
-  | true => false
-  | false => true
-  end.
-
-def should_false : Bool := neg_ true.
-def neg_true : should_false = false := refl false.";
-        for i in 0..1000 {
-            println!("Trying {}", i);
-            //crate::eqlog::hash::deterministic_hash::reseed_rng(i);
-            let result =
-                std::panic::catch_unwind(|| check_defs(code));
-            if result.is_ok() {
-                println!("{}", i);
-                break
+    fn finding_wtf() {
+        for i in 0..20 {
+            unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = i };
+            let r = std::panic::catch_unwind(|| check_defs(CODE));
+            if r.is_ok() {
+                panic!("Success with seed {}", i);
             }
         }
     }
+
+    #[test] // #[should_panic]
+    fn succeeding_wtf() {
+        unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 3 };
+        check_defs(CODE);
+    }
+
+    
+    // #[test]
+    // fn wtf() {
+    //     unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 0 };
+    //     println!("running failing:");
+    //     std::panic::catch_unwind(|| check_defs(CODE));
+    //     unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 41453380551408169499007325336065367281 };
+    //     println!("running succeeding:");
+    //     check_defs(CODE);
+    // }
+
+    // #[test]
+    // #[cfg(feature = "eqlog_deterministic_hash")]
+    // fn weird_test() {
+    //     for i in 0..1000 {
+    //         println!("Trying {}", i);
+    //         //crate::eqlog::hash::deterministic_hash::reseed_rng(i);
+    //         let result =
+    //             std::panic::catch_unwind(|| check_defs(CODE));
+    //         if result.is_ok() {
+    //             println!("{}", i);
+    //             break
+    //         }
+    //     }
+    // }
 } 

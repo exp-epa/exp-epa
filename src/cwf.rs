@@ -180,7 +180,12 @@ lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSigna
     map(|s| to_surjection_presentation(CwfSignature::new(), s).checked(CwfSignature::new())).
     chain(
         CwfSignature::new().relations().iter().
-        filter(|r| r.kind() == RelationKind::Operation).
+        filter(|&r| {
+            r.kind() == RelationKind::Operation
+                && *r != CwfRelation::Dom
+                && *r != CwfRelation::Cod
+                && *r != CwfRelation::TyCtx
+        }).
         map(|r| CheckedSurjectionPresentation::functionality(CwfSignature::new(), *r))
     ).
     collect();
@@ -252,19 +257,17 @@ fn format_operation(rel_sym: CwfRelation, args: &[&str]) -> String {
 }
 
 fn assign_names(cwf: &Cwf) -> HashMap<Element, String> {
-    let mut result = HashMap::new();
-
-    result.extend(
-        cwf.sort_elements(CwfSort::Ctx)
-        .zip((0 ..).map(|i| format!("G{}", i)))
-    );
-
-    result.extend(
-        cwf.sort_elements(CwfSort::Mor)
-        .zip((0 ..).map(|i| format!("f{}", i)))
-    );
-
-    result
+    cwf.elements()
+        .enumerate()
+        .map(|(i, (el, sort))| {
+            (el, match sort {
+                CwfSort::Ctx => format!("G{}", i),
+                CwfSort::Mor => format!("f{}", i),
+                CwfSort::Ty => format!("σ{}", i),
+                CwfSort::Tm => format!("s{}", i),
+            })
+        })
+        .collect()
 }
 
 fn format_cwf(cwf: &Cwf) -> String {
@@ -322,7 +325,46 @@ fn format_cwf(cwf: &Cwf) -> String {
             }
             let arg_names: Vec<&str> =
                 args.into_iter()
-                .map(|arg| names.get(&arg).map(|s| s.as_str()).unwrap_or("?"))
+                .map(|arg| names.get(&arg).unwrap().as_str())
+                .collect();
+            result.push_str(&format!("\t= {}\n", format_operation(rel_sym, &arg_names)));
+        }
+    }
+
+    for ty in cwf.sort_elements(CwfSort::Ty) {
+        if ty != cwf.representative_const(ty) {
+            continue;
+        }
+
+        result.push_str(&format!("Ty {}", names.get(&ty).unwrap()));
+        let equal_tys =
+            cwf.sort_elements(CwfSort::Mor)
+            .filter(|&other_ty| other_ty != ty && cwf.representative_const(other_ty) == ty);
+        for equal_ty in equal_tys {
+            result.push_str(&format!(" = {}", names.get(&equal_ty).unwrap()));
+        }
+
+        let ctxs: Vec<&str> =
+            cwf.rows(CwfRelation::TyCtx)
+            .filter_map(|row| {
+                if row[0] == ty {
+                    Some(names.get(&row[1]).unwrap().as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        result.push_str(&format!(" in ctx {}", *ctxs.first().unwrap()));
+        for ctx in &ctxs[1 ..] {
+            result.push_str(&format!(" and {}", ctx));
+        }
+        result.push_str("\n");
+
+        for (rel_sym, args) in rows_with_result(cwf, ty) {
+            let arg_names: Vec<&str> =
+                args.into_iter()
+                .map(|arg| names.get(&arg).unwrap().as_str())
                 .collect();
             result.push_str(&format!("\t= {}\n", format_operation(rel_sym, &arg_names)));
         }
@@ -358,13 +400,19 @@ pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element 
 
     close_cwf(cwf);
 
+    if result == Element(48) {
+        panic!(
+            "Adjoint 48\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
+            format_cwf(&before), format_cwf(cwf),
+        );
+    }
+
     for ctx in cwf.sort_elements(CwfSort::Ctx) {
         if ctx != cwf.representative_const(ctx) {
-            println!("Before:");
-            println!("{}", format_cwf(&before));
-            println!("Now:");
-            println!("{}", format_cwf(cwf));
-            panic!("Contexts equated")
+            panic!(
+                "Contexts equated\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
+                format_cwf(&before), format_cwf(cwf),
+            );
         }
     }
 

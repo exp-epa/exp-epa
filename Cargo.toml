@@ -5,12 +5,14 @@ authors = ["Martin Bidlingmaier <martin.bidlingmaier@mbid.me>", "Jakob Botsch Ni
 edition = "2018"
 build = "build.rs"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+eqlog_deterministic_hash = []
 
 [dependencies]
 lalrpop-util = "0.19.0"
 lazy_static = "1.4.0"
-maplit = "1.0.2"
+rand = "0.7.3"
+rand_chacha = "0.2.2"
 regex = "1"
 
 [build-dependencies]

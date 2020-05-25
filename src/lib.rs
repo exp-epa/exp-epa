@@ -3,8 +3,8 @@
 extern crate lalrpop_util;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate maplit;
+extern crate rand;
+extern crate rand_chacha;
 
 #[macro_use]
 pub mod eqlog;

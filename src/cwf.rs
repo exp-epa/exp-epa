@@ -4,7 +4,7 @@ use crate::eqlog::closure::*;
 use crate::eqlog::model::*;
 use crate::eqlog::element::*;
 use std::iter::once;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::convert::TryFrom;
 
 arities!{
@@ -191,6 +191,146 @@ fn test_cwf_axioms() {
     let _ = *CWF_AXIOMS;
 }
 
+fn rows_with_result(cwf: &Cwf, el: Element) -> Vec<(CwfRelation, Vec<Element>)> {
+    let mut result = Vec::new(); 
+    let sig = CwfSignature::new();
+    let el_sort = cwf.element_sort(el);
+
+    for &rel_sym in sig.relations() {
+        if *sig.arity(rel_sym).last().unwrap() != el_sort {
+            continue;
+        }
+
+        for row in cwf.rows(rel_sym) {
+            if *row.last().unwrap() == el {
+                let mut args = row.to_vec();
+                args.pop();
+                result.push((rel_sym, args));
+            }
+        }
+    }
+
+    result
+}
+
+fn format_operation(rel_sym: CwfRelation, args: &[&str]) -> String {
+    if rel_sym == CwfRelation::ExtCtx {
+        return format!("{}.?", args[0]);
+    }
+
+    if rel_sym == CwfRelation::Comp {
+        return format!("{} o {}", args[0], args[1]);
+    }
+
+    if rel_sym == CwfRelation::Wkn {
+        return format!("p_{}", args[0]);
+    }
+
+    if rel_sym == CwfRelation::Id {
+        return format!("id_{}", args[0]);
+    }
+
+    if rel_sym == CwfRelation::MorExt {
+        return format!("<{}, {}>_{}", args[1], args[2], args[0]);
+    }
+
+    let mut result = String::new();
+    result.push_str(&format!("{:?}", rel_sym));
+    result.push_str("(");
+    if args.is_empty() {
+        result.push_str(")");
+        return result;
+    }
+
+    result.push_str(*args.first().unwrap());
+    for arg in &args[1 ..] {
+        result.push_str(", ");
+        result.push_str(*arg);
+    }
+    result.push_str(")");
+    result
+}
+
+fn assign_names(cwf: &Cwf) -> HashMap<Element, String> {
+    let mut result = HashMap::new();
+
+    result.extend(
+        cwf.sort_elements(CwfSort::Ctx)
+        .zip((0 ..).map(|i| format!("G{}", i)))
+    );
+
+    result.extend(
+        cwf.sort_elements(CwfSort::Mor)
+        .zip((0 ..).map(|i| format!("f{}", i)))
+    );
+
+    result
+}
+
+fn format_cwf(cwf: &Cwf) -> String {
+    let mut result = String::new();
+
+    let names = assign_names(cwf);
+
+    for ctx in cwf.sort_elements(CwfSort::Ctx) {
+        if ctx != cwf.representative_const(ctx) {
+            continue;
+        }
+
+        result.push_str(&format!("Ctx {}", names.get(&ctx).unwrap()));
+        let equal_ctxs =
+            cwf.sort_elements(CwfSort::Ctx)
+            .filter(|&other_ctx| other_ctx != ctx && cwf.representative_const(other_ctx) == ctx);
+        for equal_ctx in equal_ctxs {
+            result.push_str(&format!(" = {}", names.get(&equal_ctx).unwrap()));
+        }
+        result.push_str(":\n");
+
+        for (rel_sym, args) in rows_with_result(cwf, ctx) {
+            if rel_sym == CwfRelation::Dom || rel_sym == CwfRelation::Cod || rel_sym == CwfRelation::TyCtx {
+                continue;
+            }
+            let arg_names: Vec<&str> =
+                args.into_iter()
+                .map(|arg| names.get(&arg).map(|s| s.as_str()).unwrap_or("?"))
+                .collect();
+            result.push_str(&format!("\t= {}\n", format_operation(rel_sym, &arg_names)));
+        }
+    }
+
+
+    for mor in cwf.sort_elements(CwfSort::Mor) {
+        if mor != cwf.representative_const(mor) {
+            continue;
+        }
+
+        result.push_str(&format!("Mor {}", names.get(&mor).unwrap()));
+        let equal_mors =
+            cwf.sort_elements(CwfSort::Mor)
+            .filter(|&other_mor| other_mor != mor && cwf.representative_const(other_mor) == mor);
+        for equal_mor in equal_mors {
+            result.push_str(&format!(" = {}", names.get(&equal_mor).unwrap()));
+        }
+
+        let dom = cwf.rows(CwfRelation::Dom).find(|row| row[0] == mor).map(|row| row[1]).unwrap();
+        let cod = cwf.rows(CwfRelation::Cod).find(|row| row[0] == mor).map(|row| row[1]).unwrap();
+
+        result.push_str(&format!(" : {} -> {}\n", names.get(&dom).unwrap(), names.get(&cod).unwrap()));
+        for (rel_sym, args) in rows_with_result(cwf, mor) {
+            if rel_sym == CwfRelation::Dom || rel_sym == CwfRelation::Cod || rel_sym == CwfRelation::TyCtx {
+                continue;
+            }
+            let arg_names: Vec<&str> =
+                args.into_iter()
+                .map(|arg| names.get(&arg).map(|s| s.as_str()).unwrap_or("?"))
+                .collect();
+            result.push_str(&format!("\t= {}\n", format_operation(rel_sym, &arg_names)));
+        }
+    }
+
+    result
+}
+
 pub fn close_cwf(cwf: &mut Cwf) {
     close_model(CWF_AXIOMS.as_slice(), cwf);
 }
@@ -203,6 +343,8 @@ pub fn els_are_equal(cwf: &mut Cwf, lhs: Element, rhs: Element) -> bool {
 pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element {
     assert_eq!(op.kind(), RelationKind::Operation);
 
+    let before = cwf.clone();
+
     let dom_len: usize = op.arity().len() - 1;
     let op_dom: &[CwfSort] = &op.arity()[.. dom_len];
     let cod: CwfSort = *op.arity().last().unwrap();
@@ -213,6 +355,19 @@ pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element 
     let mut row = args;
     row.push(result);
     cwf.adjoin_rows(op, once(row));
+
+    close_cwf(cwf);
+
+    for ctx in cwf.sort_elements(CwfSort::Ctx) {
+        if ctx != cwf.representative_const(ctx) {
+            println!("Before:");
+            println!("{}", format_cwf(&before));
+            println!("Now:");
+            println!("{}", format_cwf(cwf));
+            panic!("Contexts equated")
+        }
+    }
+
     result
 }
 
@@ -245,7 +400,7 @@ fn adjoin_post_compositions_step(
             //     cwf.rows(CwfRelation::IterExtCtx).find(|r| r == &[dom_root_ctx, dom])?;
             // }
 
-            let cod = cwf.rows(CwfRelation::Cod).find(|r| r[0] == morph)?[1];
+            let cod = cwf.rows(CwfRelation::Cod).find(|r| r[0] == morph).unwrap()[1];
 
             Some(MorphismWithSignature{
                 morph: morph,
@@ -270,7 +425,7 @@ fn adjoin_post_compositions_step(
         .filter(|&(after, before)| !composition_exists.contains(&(after.morph, before.morph)))
         .map(|(after, before)| {
             let comp = adjoin_op(cwf, CwfRelation::Comp, vec![after.morph, before.morph]);
-            println!("Added composition");
+            println!("Added composition {:?} o {:?}", after.morph, before.morph);
             MorphismWithSignature{
                 morph: comp,
                 dom: before.dom,

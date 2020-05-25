@@ -55,6 +55,16 @@ impl<Sig: Signature> Model<Sig> {
         let Element(el0) = el;
         self.element_infos[el0 as usize].sort
     }
+    pub fn sort_elements<'a>(&'a self, sort: Sig::Sort) -> impl Iterator<Item = Element> + 'a {
+        self.elements()
+        .filter_map(move |(el, el_sort)| {
+            if el_sort == sort {
+                Some(el)
+            } else {
+                None
+            }
+        })
+    }
     pub fn representative_const(&self, el: Element) -> Element {
         self.representatives.find_const(el)
     }
@@ -135,10 +145,17 @@ impl<Sig: Signature> Model<Sig> {
 
         let eis = &mut self.element_infos;
 
-        // make b the element with maximal row_occurences
-        if eis[a.0 as usize].row_occurences > eis[b.0 as usize].row_occurences {
+        // make b the element with the lower id
+        if b.0 > a.0 {
             swap(&mut a, &mut b);
         }
+        // TODO: the following is probably more efficient:
+        // (also keeping track of row_occurences is unnecessary if we just always merge into the
+        // lower id)
+        // // make b the element with maximal row_occurences
+        // if eis[a.0 as usize].row_occurences > eis[b.0 as usize].row_occurences {
+        //     swap(&mut a, &mut b);
+        // }
 
         self.representatives.merge_into(a, b);
         eis[b.0 as usize].row_occurences += eis[a.0 as usize].row_occurences;

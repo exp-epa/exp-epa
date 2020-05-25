@@ -66,13 +66,11 @@ lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSigna
         // identity is a left and right identity
         sequent!(Comp(f, Id(Dom(f))) ~> f),
         sequent!(Comp(Id(Cod(f)), f) ~> f),
-        //sequent!(i = Id(x) & Dom(f) = x => Comp(f, i) = f),
-        //sequent!(i = Id(y) & Cod(f) = y => Comp(i, f) = f),
-        // one direction is probably not needed
 
         // composition is associative
+        // TODO: are both direction needed?
         sequent!(Comp(h, Comp(g, f)) ~> Comp(Comp(h, g), f)),
-        // TODO: is the other direction needed?
+        sequent!(Comp(Comp(h, g), f) ~> Comp(h, Comp(g, f))),
 
 
         // context and type of substitutions
@@ -84,8 +82,11 @@ lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSigna
         sequent!(SubstTm(Id(TyCtx(TmTy(s))), s) ~> s),
 
         // functoriality of substitution: composition
+        // TODO: are both direction needed?
         sequent!(SubstTy(g, SubstTy(f, sigma)) ~> SubstTy(Comp(g, f), sigma)),
+        sequent!(SubstTy(Comp(g, f), sigma) ~> SubstTy(g, SubstTy(f, sigma))),
         sequent!(SubstTm(g, SubstTm(f, s)) ~> SubstTm(Comp(g, f), s)),
+        sequent!(SubstTm(Comp(g, f), s) ~> SubstTm(g, SubstTm(f, s))),
 
 
         // domain and codomain of the weakening map
@@ -239,10 +240,10 @@ fn adjoin_post_compositions_step(
 
             // TODO: checking `dom != dom_root_ctx` shouldn't be neccessary once IterExtCtx can be
             // made reflexive
-            if dom != dom_root_ctx {
-                // return None if dom is not an iterated ext of dom_root_ctx
-                cwf.rows(CwfRelation::IterExtCtx).find(|r| r == &[dom_root_ctx, dom])?;
-            }
+            // if dom != dom_root_ctx {
+            //     // return None if dom is not an iterated ext of dom_root_ctx
+            //     cwf.rows(CwfRelation::IterExtCtx).find(|r| r == &[dom_root_ctx, dom])?;
+            // }
 
             let cod = cwf.rows(CwfRelation::Cod).find(|r| r[0] == morph)?[1];
 
@@ -253,6 +254,8 @@ fn adjoin_post_compositions_step(
             })
         })
         .collect();
+
+    // println!("{:?}", before_morphisms.len());
 
     let composition_exists: HashSet<(Element, Element)> =
         cwf.rows(CwfRelation::Comp)

@@ -3,6 +3,7 @@ use crate::cwf::*;
 use std::collections::HashMap;
 use std::iter::once;
 use crate::lang::ast;
+use std::convert::TryFrom;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Environment {
@@ -55,8 +56,10 @@ impl Environment {
             CwfRelation::ExtTy,
             once(vec![ext_ctx_el, ty_el]),
         );
-        adjoin_op(cwf, CwfRelation::Wkn, vec![ext_ctx_el]); // TODO: why is this needed?
         let var_el = adjoin_op(cwf, CwfRelation::Var, vec![ext_ctx_el]);
+
+        adjoin_op(cwf, CwfRelation::Wkn, vec![ext_ctx_el]); // TODO: why is this needed?
+        adjoin_op(cwf, CwfRelation::Id, vec![ext_ctx_el]); // TODO: why is this needed?
 
         self.current_extension.push(ext_ctx_el);
         self.defs.insert(var_name, (self.current_extension.clone(), var_el));
@@ -103,6 +106,79 @@ impl Environment {
     }
 
     pub fn add_definition(&mut self, cwf: &mut Cwf, should_check: EqChecking, def: &ast::Def) {
+        if &def.name == "neg_true" {
+            close_cwf(cwf);
+            println!("CtxExt:");
+            println!("================================================================================");
+            for ext_row in cwf.rows(CwfRelation::ExtCtx) {
+                let [base_ctx, ext_ctx] = <[Element; 2]>::try_from(ext_row).unwrap();
+                println!("{:?}.? = {:?}", base_ctx, ext_ctx);
+            }
+            for dom_row in cwf.rows(CwfRelation::Dom) {
+                let [morph, dom] = <[Element; 2]>::try_from(dom_row).unwrap();
+                let cod = cwf.rows(CwfRelation::Cod).find(|r| r[0] == morph).unwrap()[1];
+                println!("{:?} : {:?} -> {:?}", morph, dom, cod);
+                
+                for id_row in cwf.rows(CwfRelation::Id) {
+                    let [ctx, id] = <[Element; 2]>::try_from(id_row).unwrap();
+                    if id == morph {
+                        println!("\t = id_{:?}", ctx);
+                    }
+                }
+                
+                for wkn_row in cwf.rows(CwfRelation::Wkn) {
+                    let [ext_ctx, wkn] = <[Element; 2]>::try_from(wkn_row).unwrap();
+                    if wkn == morph {
+                        println!("\t = p_{:?}", ext_ctx);
+                    }
+                }
+                for mor_ext_row in cwf.rows(CwfRelation::MorExt) {
+                    let [ext_ctx, base_mor, ext_tm, ext_mor] = <[Element; 4]>::try_from(mor_ext_row).unwrap();
+                    if ext_mor != morph {
+                        continue;
+                    }
+
+                    let is_false = cwf.rows(CwfRelation::False).find(|&false_row| {
+                        let [ctx, false_el] = <[Element; 2]>::try_from(false_row).unwrap();
+                        false_el == ext_tm
+                    }).is_some();
+                    if is_false {
+                        println!("\t = <{:?}, false>", base_mor);
+                    }
+                    let is_true = cwf.rows(CwfRelation::True).find(|&true_row| {
+                        let [ctx, true_el] = <[Element; 2]>::try_from(true_row).unwrap();
+                        true_el == ext_tm
+                    }).is_some();
+                    if is_true {
+                        println!("\t = <{:?}, true>", base_mor);
+                    }
+
+                    let ext_of_var = cwf.rows(CwfRelation::Var).filter_map(|var_row| {
+                        let [ext_ctx, var] = <[Element; 2]>::try_from(var_row).unwrap();
+                        if var == ext_tm {
+                            Some(ext_ctx)
+                        } else {
+                            None
+                        }
+                    }).next();
+
+                    if let Some(ext_of_var) = ext_of_var {
+                        println!("\t = <{:?}, var({:?})>", base_mor, ext_of_var);
+                    }
+
+                    if !is_true && !is_false && ext_of_var.is_none() {
+                        println!("\t = <{:?}, ?>", base_mor);
+                    }
+                }
+                for comp_row in cwf.rows(CwfRelation::Comp) {
+                    let [after, before, comp] = <[Element; 3]>::try_from(comp_row).unwrap();
+                    if comp == morph {
+                        println!("\t = {:?} o {:?}", after, before);
+                    }
+                }
+            }
+        }
+
         let (def_tm, def_extension) = self.clone().with_args(cwf, should_check, def.args.as_slice(),
             |mut extended_self, cwf, should_check| {
                 let def_ty = extended_self.add_type(cwf, should_check, &def.ty);
@@ -181,6 +257,7 @@ impl Environment {
                 )
             });
 
+        // TODO: commented out for debugging
         adjoin_post_compositions(
             cwf,
             *dom_extension.last().unwrap(),
@@ -485,8 +562,10 @@ def neg_ (x : Bool): Bool :=
   | true => false
   | false => true
   end.
-  
-def neg_true : neg_ true = false := refl false.  
+
+def should_false : Bool := neg_ true.
+def neg_true : should_false = false := refl false.  
   ");
     }
+//def neg_false : neg_ false = true := refl true.  
 } 

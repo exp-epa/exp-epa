@@ -53,8 +53,8 @@ pub type CwfSignature = StaticSignature<CwfSort, CwfRelation>;
 
 pub type Cwf = Model<CwfSignature>;
 
-lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSignature>> =
-    vec![
+lazy_static! { //static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSignature>> =
+    static ref CWF_AXIOMS: Vec<Sequent> = vec![
         // domain and codomain of identities
         sequent!(Dom(Id(x)) ~> x),
         sequent!(Cod(Id(x)) ~> x),
@@ -147,12 +147,12 @@ lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSigna
         sequent!(
             TyCtx(sigma) = Gbool
             =>
-            SubstTm(MorExt(Gbool, f, True(Cod(f))), BoolElim(sigma, true_case, _)) ~> true_case
+            SubstTm(MorExt(Gbool, f, True(Cod(f))), BoolElim(sigma, true_case, _)) ~> SubstTm(f, true_case)
         ),
         sequent!(
             TyCtx(sigma) = Gbool
             =>
-            SubstTm(MorExt(Gbool, f, False(Cod(f))), BoolElim(sigma, _, false_case)) ~> false_case
+            SubstTm(MorExt(Gbool, f, False(Cod(f))), BoolElim(sigma, _, false_case)) ~> SubstTm(f, false_case)
         ),
         // Uniqueness of bool elimination
         sequent!(
@@ -176,24 +176,33 @@ lazy_static! { static ref CWF_AXIOMS: Vec<CheckedSurjectionPresentation<CwfSigna
         sequent!(SubstTm(f, Refl(s)) ~> Refl(SubstTm(f, s))),
         // equality reflection
         sequent!(eq_ty = Eq(s, t) & TmTy(e0) = eq_ty & TmTy(e1) = eq_ty => s = t & e0 = e1),
-    ].iter().
-    map(|s| to_surjection_presentation(CwfSignature::new(), s).checked(CwfSignature::new())).
-    chain(
-        CwfSignature::new().relations().iter().
-        filter(|&r| {
-            r.kind() == RelationKind::Operation
-                && *r != CwfRelation::Dom
-                && *r != CwfRelation::Cod
-                && *r != CwfRelation::TyCtx
-        }).
-        map(|r| CheckedSurjectionPresentation::functionality(CwfSignature::new(), *r))
-    ).
-    collect();
+    ];
+
+    static ref CWF_OPERATIONS: Vec<CwfRelation> = 
+        CwfSignature::new()
+        .relations().iter()
+        .filter(|&r| r.kind() == RelationKind::Operation)
+        .copied()
+        .collect();
+
+    static ref CWF_PRESENTATIONS: Vec<CheckedSurjectionPresentation<CwfSignature>> =
+        CWF_AXIOMS.iter()
+        .map(|s| to_surjection_presentation(CwfSignature::new(), s).checked(CwfSignature::new()))
+        .chain(
+            CWF_OPERATIONS.iter()
+            .map(|&op| CheckedSurjectionPresentation::functionality(CwfSignature::new(), op))
+        )
+        .collect();
+    static ref CWF_PRESENTATION_NAMES: Vec<String> =
+        CWF_AXIOMS.iter()
+        .map(|s| format!("{}", s))
+        .chain(CWF_OPERATIONS.iter().map(|op| format!("Functionality for {:?}", op)))
+        .collect();
 }
 
 #[test]
 fn test_cwf_axioms() {
-    let _ = *CWF_AXIOMS;
+    let _ = *CWF_PRESENTATIONS;
 }
 
 fn rows_with_result(cwf: &Cwf, el: Element) -> Vec<(CwfRelation, Vec<Element>)> {
@@ -338,7 +347,7 @@ fn format_cwf(cwf: &Cwf) -> String {
 
         result.push_str(&format!("Ty {}", names.get(&ty).unwrap()));
         let equal_tys =
-            cwf.sort_elements(CwfSort::Mor)
+            cwf.sort_elements(CwfSort::Ty)
             .filter(|&other_ty| other_ty != ty && cwf.representative_const(other_ty) == ty);
         for equal_ty in equal_tys {
             result.push_str(&format!(" = {}", names.get(&equal_ty).unwrap()));
@@ -370,11 +379,50 @@ fn format_cwf(cwf: &Cwf) -> String {
         }
     }
 
+    for tm in cwf.sort_elements(CwfSort::Tm) {
+        if tm != cwf.representative_const(tm) {
+            continue;
+        }
+
+        result.push_str(&format!("Tm {}", names.get(&tm).unwrap()));
+        let equal_tms =
+            cwf.sort_elements(CwfSort::Tm)
+            .filter(|&other_tm| other_tm != tm && cwf.representative_const(other_tm) == tm);
+        for equal_tm in equal_tms {
+            result.push_str(&format!(" = {}", names.get(&equal_tm).unwrap()));
+        }
+
+        let tys: Vec<&str> =
+            cwf.rows(CwfRelation::TmTy)
+            .filter_map(|row| {
+                if row[0] == tm {
+                    Some(names.get(&row[1]).unwrap().as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(tys.len(), 1);
+        result.push_str(&format!(": {}\n", tys[0]));
+
+        for (rel_sym, args) in rows_with_result(cwf, tm) {
+            let arg_names: Vec<&str> =
+                args.into_iter()
+                .map(|arg| names.get(&arg).unwrap().as_str())
+                .collect();
+            result.push_str(&format!("\t= {}\n", format_operation(rel_sym, &arg_names)));
+        }
+    }
+
     result
 }
 
 pub fn close_cwf(cwf: &mut Cwf) {
-    close_model(CWF_AXIOMS.as_slice(), cwf);
+    trace_close_model(
+        CWF_PRESENTATIONS.as_slice(),
+        CWF_PRESENTATION_NAMES.as_slice(),
+        cwf
+    );
 }
 
 pub fn els_are_equal(cwf: &mut Cwf, lhs: Element, rhs: Element) -> bool {
@@ -385,13 +433,22 @@ pub fn els_are_equal(cwf: &mut Cwf, lhs: Element, rhs: Element) -> bool {
 pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element {
     assert_eq!(op.kind(), RelationKind::Operation);
 
-    let before = cwf.clone();
-
     let dom_len: usize = op.arity().len() - 1;
     let op_dom: &[CwfSort] = &op.arity()[.. dom_len];
     let cod: CwfSort = *op.arity().last().unwrap();
 
     assert!(op_dom.iter().cloned().eq(args.iter().map(|arg| cwf.element_sort(*arg))));
+
+    if let Some(res) =
+        cwf.rows(op)
+            .find(|&row| &row[.. dom_len] == args.as_slice())
+            .map(|row| row[dom_len])
+    {
+        return res;
+    }
+
+    let before = cwf.clone();
+    cwf.events.clear();
 
     let result = cwf.adjoin_element(cod);
     let mut row = args;
@@ -400,20 +457,15 @@ pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element 
 
     close_cwf(cwf);
 
-    if result == Element(48) {
-        let ii = 0;
-        //panic!(
-        //    "Adjoint 48\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
-        //    format_cwf(&before), format_cwf(cwf),
-        //);
-    }
-
     for ctx in cwf.sort_elements(CwfSort::Ctx) {
         if ctx != cwf.representative_const(ctx) {
-            panic!(
-                "Contexts equated\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
-                format_cwf(&before), format_cwf(cwf),
-            );
+            println!("Cwf before:\n{}", format_cwf(&before));
+            println!("==========================================");
+            println!("Cwf after:\n{}", format_cwf(cwf));
+            println!("==========================================");
+            println!("Events:");
+            cwf.print_trace();
+            panic!("Contexts equated");
         }
     }
 
@@ -521,6 +573,10 @@ impl Cwf {
                         .join(", ")),
                 ModelEvent::Close =>
                     println!("close_cwf(cwf);"),
+                ModelEvent::Equate(e1, e2) =>
+                    println!("cwf.equate({:?}, {:?});", e1, e2),
+                ModelEvent::RuleApplicable(name) =>
+                    println!("Rule applicable: {}", name),
             }
         }
     }

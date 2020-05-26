@@ -490,8 +490,14 @@ def neg_ (x : Bool): Bool :=
   | false => true
   end.
 
-def should_false : Bool := neg_ true.
-def neg_true : should_false = false := refl false. \
+def neg_true: neg_ true = false := refl false.
+def neg_false: neg_ false = true := refl true.
+
+def involutive (x: Bool): neg_ (neg_ x) = x :=
+  elim x into (y : Bool) : neg_ (neg_ y) = y
+  | true => refl true
+  | false => refl false
+  end.
 ";
 
     #[test]

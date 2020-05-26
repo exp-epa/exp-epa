@@ -29,7 +29,9 @@ pub struct Model<Sig: Signature> {
 pub enum ModelEvent<Sig: Signature> {
     AdjoinElement(Sig::Sort, Element),
     AdjoinRows(Sig::Relation, Vec<Row>),
+    Equate(Element, Element),
     Close,
+    RuleApplicable(String),
 }
 
 impl<Sig: Signature> Model<Sig> {
@@ -217,6 +219,9 @@ impl<Sig: Signature> Model<Sig> {
 
         self.representatives.merge_into(a, b);
 
+        #[cfg(feature="trace_model")]
+        self.events.push(ModelEvent::Equate(a, b));
+
         #[cfg(debug_assertions)]
         self.self_check();
 
@@ -254,7 +259,7 @@ impl<Sig: Signature> Model<Sig> {
 impl<Sig: Signature> Extend<(Sig::Relation, Row)> for Model<Sig> {
     fn extend<I: IntoIterator<Item = (Sig::Relation, Row)>>(&mut self, rows: I) {
         for (r, row) in rows {
-            self.adjoin_rows_internal(r, once(row));
+            self.adjoin_rows(r, once(row));
         }
     }
 }

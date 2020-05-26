@@ -3,6 +3,7 @@ use super::signature::*;
 use super::element::Element;
 use std::cmp::max;
 use std::fmt::Debug;
+use std::iter::once;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Presentation<Relation> {
@@ -459,6 +460,56 @@ pub fn close_model<Sig: Signature>(
         conc_eqs.drain(..).for_each(|(lhs, rhs)| { model.equate(lhs, rhs); });
         model.canonicalize_elements();
         model.extend(conc_rows.drain(..));
+        debug_assert!(conc_rows.is_empty());
+        debug_assert!(conc_eqs.is_empty());
+
+        let no_new_rows: bool =
+            model.signature().relations().iter().
+            all(|&r| model.new_rows(r).next().is_none());
+        if no_new_rows {
+            break;
+        }
+    }
+}
+
+pub fn trace_close_model<Sig: Signature>(
+    presentations: &[CheckedSurjectionPresentation<Sig>],
+    presentation_names: &[String],
+    model: &mut Model<Sig>
+) {
+    #[cfg(feature="trace_model")]
+    model.events.push(ModelEvent::Close);
+    // TODO: check whether signatures are equal?
+    let mut conc_eqs: Vec<(Element, Element, &str,)> = vec![];
+    let mut conc_rows: Vec<(Sig::Relation, Vec<Element>, &str)> = vec![];
+
+    loop {
+        for (presentation, name) in presentations.iter().zip(presentation_names) {
+            presentation.domain.visit_new_interpretations(model, |row| {
+                conc_rows.extend(presentation.codomain_relations.iter().map(|(r, row_indices)| {
+                    (*r, row_indices.iter().map(|i| row[*i]).collect(), name.as_str())
+                }));
+                conc_eqs.extend(presentation.codomain_equalities.iter().map(|(lhs_index, rhs_index)| {
+                    (row[*lhs_index], row[*rhs_index], name.as_str())
+                }));
+            });
+        }
+
+        model.age_rows();
+        conc_eqs.drain(..).for_each(|(lhs, rhs, name)| {
+            if model.representative(lhs) != model.representative(rhs) {
+                model.events.push(ModelEvent::RuleApplicable(name.to_string()));
+                model.equate(lhs, rhs);
+            }
+        });
+        model.canonicalize_elements();
+        conc_rows.drain(..).for_each(|(r, row, name)| {
+            if model.rows(r).find(|&r| r == row.as_slice()).is_none() {
+                model.events.push(ModelEvent::RuleApplicable(name.to_string()));
+                model.adjoin_rows(r, once(row));
+            }
+        });
+        // model.extend(conc_rows.drain(..));
         debug_assert!(conc_rows.is_empty());
         debug_assert!(conc_eqs.is_empty());
 

@@ -20,6 +20,16 @@ pub struct Model<Sig: Signature> {
     element_sorts: Vec<Sig::Sort>,
     representatives: UnionFind,
     relations: Vec<DeltaRelation>,
+    #[cfg(feature="trace_model")]
+    pub events: Vec<ModelEvent<Sig>>,
+}
+
+#[cfg(feature="trace_model")]
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum ModelEvent<Sig: Signature> {
+    AdjoinElement(Sig::Sort, Element),
+    AdjoinRows(Sig::Relation, Vec<Row>),
+    Close,
 }
 
 impl<Sig: Signature> Model<Sig> {
@@ -66,6 +76,8 @@ impl<Sig: Signature> Model<Sig> {
             element_sorts: Vec::new(),
             representatives: UnionFind::new(),
             relations: relations,
+            #[cfg(feature="trace_model")]
+            events: Vec::new(),
         }
     }
     pub fn signature(&self) -> &Sig {
@@ -114,6 +126,10 @@ impl<Sig: Signature> Model<Sig> {
     }
     pub fn adjoin_element(&mut self, sort: Sig::Sort) -> Element {
         let el = self.representatives.new_element();
+
+        #[cfg(feature="trace_model")]
+        self.events.push(ModelEvent::AdjoinElement(sort, el));
+
         debug_assert_eq!(el.0 as usize, self.element_sorts.len());
         self.element_sorts.push(sort);
         #[cfg(debug_assertions)]
@@ -124,8 +140,20 @@ impl<Sig: Signature> Model<Sig> {
     pub fn adjoin_rows(
         &mut self,
         relation: Sig::Relation,
+        rows: impl IntoIterator<Item = Row> + Clone,
+    ) -> usize {
+        #[cfg(feature="trace_model")]
+        self.events.push(ModelEvent::AdjoinRows(relation, rows.clone().into_iter().collect()));
+
+        self.adjoin_rows_internal(relation, rows)
+    }
+
+    fn adjoin_rows_internal(
+        &mut self,
+        relation: Sig::Relation,
         rows: impl IntoIterator<Item = Row>,
     ) -> usize {
+
         let arity = self.signature.arity(relation);
 
         let DeltaRelation { new_rows, old_rows } = &mut self.relations[relation.into()];
@@ -215,7 +243,7 @@ impl<Sig: Signature> Model<Sig> {
                 .map(|row| row.to_vec())
                 .collect();
             self.remove_rows(r, dirty_rows.iter());
-            self.adjoin_rows(r, dirty_rows.into_iter());
+            self.adjoin_rows_internal(r, dirty_rows.into_iter());
         }
 
         #[cfg(debug_assertions)]
@@ -226,7 +254,7 @@ impl<Sig: Signature> Model<Sig> {
 impl<Sig: Signature> Extend<(Sig::Relation, Row)> for Model<Sig> {
     fn extend<I: IntoIterator<Item = (Sig::Relation, Row)>>(&mut self, rows: I) {
         for (r, row) in rows {
-            self.adjoin_rows(r, once(row));
+            self.adjoin_rows_internal(r, once(row));
         }
     }
 }

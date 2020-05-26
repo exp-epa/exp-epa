@@ -3,7 +3,6 @@ use crate::cwf::*;
 use std::collections::HashMap;
 use std::iter::once;
 use crate::lang::ast;
-use std::convert::TryFrom;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Environment {
@@ -114,10 +113,10 @@ impl Environment {
 
                 if should_check == EqChecking::Yes {
                     close_cwf(cwf);
-                    assert!(
-                        els_are_equal(cwf, def_ty, def_tm_ty),
-                        "Def body `{:?}` does not have type `{:?}`", def.tm, def.ty
-                    );
+                    if !els_are_equal(cwf, def_ty, def_tm_ty) {
+                        cwf.print_trace();
+                        panic!("Def body `{:?}` does not have type `{:?}`", def.tm, def.ty);
+                    }
                 }
 
                 (def_tm, extended_self.current_extension)
@@ -369,12 +368,10 @@ impl Environment {
 
 #[cfg(test)]
 mod test {
-    use crate::lang::parser;
-    use rand::Rng;
+    use crate::lang::parser::*;
     use super::*;
-    use parser::*;
 
-    fn check_defs(text: &str) {
+    fn check_defs(text: &str) -> (Cwf, Environment) {
         let unit =
             match UnitParser::new().parse(text) {
                 Ok(result) => result,
@@ -384,34 +381,36 @@ mod test {
         let mut env = Environment::new(&mut cwf);
         for def in &unit {
             env.add_definition(&mut cwf, EqChecking::Yes, &def)
-        }
+        };
+
+        (cwf, env)
     }
 
     #[test]
     fn test_bool_identity() {
-        check_defs("def id (x : Bool) : Bool := x.")
+        check_defs("def id (x : Bool) : Bool := x.");
     }
 
     #[test]
     fn test_bool_identity_asserted() {
-        check_defs("def id (x : Bool) : Bool := (x : Bool).")
+        check_defs("def id (x : Bool) : Bool := (x : Bool).");
     }
 
     #[test] #[should_panic]
     fn test_ill_typed_def() {
-        check_defs("def x : Bool := unit.")
+        check_defs("def x : Bool := unit.");
     }
 
     #[test] #[should_panic]
     fn test_failing_assertion() {
-        check_defs("def x : Bool := (True: Unit).")
+        check_defs("def x : Bool := (True: Unit).");
     }
 
     #[test]
     fn test_unit_tm_uniqueness() {
         check_defs("
 def r (x y : Unit) : x = y :=
-    refl unit.")
+    refl unit.");
     }
 
     #[test] #[should_panic]
@@ -420,12 +419,12 @@ def r (x y : Unit) : x = y :=
 def r : true = true :=
   (refl true : true = true).
 
-def r' : Bool := refl true.")
+def r' : Bool := refl true.");
     }
 
     #[test]
     fn test_refl_of_var() {
-        check_defs("def r (x : Bool) : x = x := refl x.")
+        check_defs("def r (x : Bool) : x = x := refl x.");
     }
 
     #[test]
@@ -435,7 +434,7 @@ def r (x : Bool) : x = x :=
   refl x.
 
 def rtrue : true = true :=
-  r true.")
+  r true.");
     }
 
     #[test]
@@ -444,11 +443,11 @@ def rtrue : true = true :=
 def negtrue : Bool :=
   neg true.
 def r : negtrue = false :=
-  refl false.")
+  refl false.");
     }
 
     #[test]
-    fn bool_ellim_neg_true() {
+    fn bool_elim_neg_true() {
         check_defs("
 def negtrue : Bool :=
   elim true into (x : Bool) : Bool
@@ -457,7 +456,7 @@ def negtrue : Bool :=
   end.
 
 def r : negtrue = false :=
-  refl false.")
+  refl false.");
     }
 
     #[test]
@@ -467,7 +466,7 @@ def foo (x : Bool) : Bool :=
   let b (y : Bool) : Bool := neg (neg y) in
   let r : false = neg true := refl false in
   let s : true = b true := refl true in
-  true.")
+  true.");
     }
 
     #[test]
@@ -480,7 +479,7 @@ def r (x : Bool) : x = neg (neg x) :=
             (refl true : true = neg (neg true))
   | false => let _1 : true = neg false := refl true in
              (refl false : false = neg (neg false))
-  end.")
+  end.");
     }
 
 
@@ -496,12 +495,6 @@ def neg_true : should_false = false := refl false. \
 ";
 
     #[test]
-    fn failing_wtf() {
-        unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 0 };
-        check_defs(CODE)
-    }
-
-    #[test]
     fn finding_wtf() {
         for i in 0..20 {
             unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = i };
@@ -512,10 +505,16 @@ def neg_true : should_false = false := refl false. \
         }
     }
 
+    #[test]
+    fn test_wtf1() {
+        unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 0 };
+        check_defs(CODE).0.print_trace();
+    }
+
     #[test] // #[should_panic]
-    fn succeeding_wtf() {
+    fn test_wtf2() {
         unsafe { crate::eqlog::hash::deterministic_hash::HASH_SEED = 3 };
-        check_defs(CODE);
+        check_defs(CODE).0.print_trace();
     }
 
     

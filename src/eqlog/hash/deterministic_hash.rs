@@ -1,8 +1,5 @@
-use std::convert::TryInto;
-use std::hash::{BuildHasher, Hasher};
+use std::hash::BuildHasher;
 use std::collections::hash_map::{DefaultHasher, RandomState};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaChaRng;
 
 pub static mut HASH_SEED: u128 = 0;
 

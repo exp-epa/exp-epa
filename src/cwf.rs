@@ -401,10 +401,11 @@ pub fn adjoin_op(cwf: &mut Cwf, op: CwfRelation, args: Vec<Element>) -> Element 
     close_cwf(cwf);
 
     if result == Element(48) {
-        panic!(
-            "Adjoint 48\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
-            format_cwf(&before), format_cwf(cwf),
-        );
+        let ii = 0;
+        //panic!(
+        //    "Adjoint 48\nBefore:\n{}\n===============================================\nAfter:\n{}\n",
+        //    format_cwf(&before), format_cwf(cwf),
+        //);
     }
 
     for ctx in cwf.sort_elements(CwfSort::Ctx) {
@@ -433,7 +434,7 @@ pub struct MorphismWithSignature {
 fn adjoin_post_compositions_step(
     cwf: &mut Cwf,
     dom_root_ctx: Element,
-    after_morphisms: impl IntoIterator<Item = MorphismWithSignature>,
+    after_morphisms: impl IntoIterator<Item = MorphismWithSignature> + Clone,
 ) -> Vec<MorphismWithSignature> {
 
     let before_morphisms: Vec<MorphismWithSignature> =
@@ -465,22 +466,22 @@ fn adjoin_post_compositions_step(
         .map(|r| (r[0], r[1]))
         .collect();
 
-    after_morphisms.into_iter()
-        .zip(before_morphisms)
-        // ... but only matching pairs
-        .filter(|&(after, before)| after.dom == before.cod)
-        // ... for which the composition doesn't exist already
-        .filter(|&(after, before)| !composition_exists.contains(&(after.morph, before.morph)))
-        .map(|(after, before)| {
+    let mut v = Vec::new();
+    for before in before_morphisms.iter() {
+        for after in after_morphisms.clone() {
+            if after.dom != before.cod || composition_exists.contains(&(after.morph, before.morph)) {
+                continue
+            }
+
             let comp = adjoin_op(cwf, CwfRelation::Comp, vec![after.morph, before.morph]);
-            println!("Added composition {:?} o {:?}", after.morph, before.morph);
-            MorphismWithSignature{
+            v.push(MorphismWithSignature{
                 morph: comp,
                 dom: before.dom,
                 cod: after.cod,
-            }
-        })
-        .collect()
+            });
+        }
+    }
+    v
 }
 
 pub fn adjoin_post_compositions(
@@ -499,5 +500,28 @@ pub fn adjoin_post_compositions(
             m.cod = cwf.representative(m.cod);
         }
         after_morphisms = adjoin_post_compositions_step(cwf, dom_root_ctx, after_morphisms);
+    }
+}
+
+impl Cwf {
+    #[cfg(feature="trace_model")]
+    pub fn print_trace(&self) {
+        for evt in self.events.iter() {
+            match evt {
+                ModelEvent::AdjoinElement(sort, Element(u)) =>
+                    println!("let e{} = cwf.adjoin_element(CwfSort::{:?});", u, sort),
+                ModelEvent::AdjoinRows(rel, rows) =>
+                    println!(
+                        "cwf.adjoin_rows(CwfRelation::{:?}, vec![{}]);",
+                        rel,
+                        rows
+                        .iter()
+                        .map(|r| format!("[{}]", r.iter().map(|Element(u)| format!("e{}", u)).collect::<Vec<String>>().join(", ")))
+                        .collect::<Vec<String>>()
+                        .join(", ")),
+                ModelEvent::Close =>
+                    println!("close_cwf(cwf);"),
+            }
+        }
     }
 }

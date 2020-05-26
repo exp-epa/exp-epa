@@ -437,6 +437,8 @@ pub fn close_model<Sig: Signature>(
     presentations: &[CheckedSurjectionPresentation<Sig>],
     model: &mut Model<Sig>
 ) {
+    #[cfg(feature="trace_model")]
+    model.events.push(ModelEvent::Close);
     // TODO: check whether signatures are equal?
     let mut conc_eqs: Vec<(Element, Element)> = vec![];
     let mut conc_rows: Vec<(Sig::Relation, Vec<Element>)> = vec![];
